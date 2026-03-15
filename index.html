@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Encuestas – Florencia, Caquetá</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    /* =============================================
+       VARIABLES Y RESET
+    ============================================= */
+    :root {
+      --bg:        #0f1117;
+      --surface:   #181c27;
+      --surface2:  #1e2333;
+      --border:    #2a3050;
+      --green:     #22c55e;
+      --red:       #ef4444;
+      --gray:      #6b7280;
+      --yellow:    #f59e0b;
+      --text:      #e2e8f0;
+      --text-dim:  #94a3b8;
+      --accent:    #3b82f6;
+      --panel-w:   320px;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    html, body { height:100%; font-family:'Segoe UI',system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--text); overflow:hidden; }
+
+    /* =============================================
+       PANTALLA DE CARGA
+    ============================================= */
+    #splash {
+      position:fixed; inset:0; background:var(--bg);
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      z-index:9999; gap:16px;
+    }
+    #splash h2 { font-size:18px; color:var(--text); }
+    #splash p  { font-size:13px; color:var(--text-dim); text-align:center; padding:0 32px; }
+    .spinner {
+      width:40px; height:40px; border:3px solid var(--border);
+      border-top-color:var(--accent); border-radius:50%;
+      animation:spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    /* =============================================
+       INDICADOR DE CONEXIÓN
+    ============================================= */
+    #conn-badge {
+      position:fixed; top:10px; left:50%; transform:translateX(-50%);
+      z-index:1000; padding:4px 14px; border-radius:99px;
+      font-size:11px; font-weight:700; letter-spacing:0.3px;
+      display:flex; align-items:center; gap:6px;
+      border:1px solid var(--border); background:var(--surface2);
+      pointer-events:none; transition:opacity 0.4s;
+    }
+    #conn-badge .dot { width:7px; height:7px; border-radius:50%; }
+    #conn-badge.online  .dot { background:var(--green); }
+    #conn-badge.offline .dot { background:var(--red); }
+    #conn-badge.syncing .dot { background:var(--yellow); animation:pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* =============================================
+       LAYOUT
+    ============================================= */
+    #app { display:flex; height:100vh; width:100vw; position:relative; }
+    #map { flex:1; height:100%; z-index:1; }
+
+    /* =============================================
+       PANEL LATERAL
+    ============================================= */
+    #panel {
+      width:var(--panel-w); height:100%;
+      background:var(--surface); border-left:1px solid var(--border);
+      display:flex; flex-direction:column; z-index:10; overflow:hidden;
+      transition:transform 0.3s ease;
+    }
+    #panel-header { padding:14px 16px; background:var(--surface2); border-bottom:1px solid var(--border); flex-shrink:0; }
+    #panel-header h1 { font-size:14px; font-weight:700; margin-bottom:2px; }
+    #panel-header p  { font-size:11px; color:var(--text-dim); }
+
+    /* Stats */
+    #stats { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; padding:10px 12px; flex-shrink:0; border-bottom:1px solid var(--border); }
+    .stat-box { background:var(--surface2); border-radius:8px; padding:8px 4px; text-align:center; border:1px solid var(--border); }
+    .stat-box .num { font-size:20px; font-weight:800; line-height:1; }
+    .stat-box .lbl { font-size:9px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px; }
+    .stat-box.total .num { color:var(--accent); }
+    .stat-box.visit .num { color:var(--red); }
+    .stat-box.pend  .num { color:var(--green); }
+
+    /* Progreso */
+    #progress-bar-wrap { padding:8px 14px; flex-shrink:0; border-bottom:1px solid var(--border); }
+    #progress-label { display:flex; justify-content:space-between; font-size:11px; color:var(--text-dim); margin-bottom:4px; }
+    #progress-bar { height:5px; background:var(--border); border-radius:99px; overflow:hidden; }
+    #progress-fill { height:100%; background:linear-gradient(90deg,var(--green),var(--accent)); border-radius:99px; transition:width 0.4s; }
+
+    /* Leyenda */
+    #legend { display:flex; gap:10px; padding:8px 14px; flex-shrink:0; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+    .legend-item { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--text-dim); }
+    .legend-dot { width:9px; height:9px; border-radius:50%; }
+
+    /* Buscador */
+    #search-wrap { padding:8px 12px; flex-shrink:0; border-bottom:1px solid var(--border); }
+    #search { width:100%; background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:7px 10px; color:var(--text); font-size:13px; outline:none; }
+    #search:focus { border-color:var(--accent); }
+    #search::placeholder { color:var(--text-dim); }
+
+    /* Filtros */
+    #filters { display:flex; gap:5px; padding:7px 12px; flex-shrink:0; border-bottom:1px solid var(--border); }
+    .filter-btn { flex:1; padding:5px 2px; border-radius:6px; border:1px solid var(--border); background:var(--surface2); color:var(--text-dim); font-size:10px; cursor:pointer; text-align:center; transition:all 0.2s; }
+    .filter-btn.active { border-color:var(--accent); color:var(--accent); background:rgba(59,130,246,0.1); }
+
+    /* Lista */
+    #list-wrap { flex:1; overflow-y:auto; padding:6px; }
+    #list-wrap::-webkit-scrollbar { width:3px; }
+    #list-wrap::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px; }
+
+    .item { display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:8px; cursor:pointer; transition:background 0.15s; border:1px solid transparent; margin-bottom:3px; }
+    .item:hover { background:var(--surface2); }
+    .item.active-item { border-color:var(--accent); background:rgba(59,130,246,0.08); }
+    .item-dot { width:11px; height:11px; border-radius:50%; flex-shrink:0; }
+    .item-info { flex:1; min-width:0; }
+    .item-num { font-size:9px; color:var(--text-dim); font-weight:600; }
+    .item-name { font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .item-barrio { font-size:10px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .item-note-icon { font-size:11px; flex-shrink:0; }
+
+    /* Acciones */
+    #actions { padding:8px 12px; flex-shrink:0; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:5px; }
+    .action-row { display:flex; gap:5px; }
+    .btn { flex:1; padding:8px 4px; border-radius:8px; border:1px solid var(--border); background:var(--surface2); color:var(--text); font-size:11px; cursor:pointer; text-align:center; transition:all 0.2s; font-weight:500; }
+    .btn:hover { background:var(--border); }
+    .btn.btn-danger  { border-color:rgba(239,68,68,0.4); color:var(--red); }
+    .btn.btn-danger:hover  { background:rgba(239,68,68,0.15); }
+    .btn.btn-success { border-color:rgba(34,197,94,0.4); color:var(--green); }
+    .btn.btn-success:hover { background:rgba(34,197,94,0.15); }
+    .btn.btn-blue    { border-color:rgba(59,130,246,0.4); color:var(--accent); }
+    .btn.btn-blue:hover    { background:rgba(59,130,246,0.15); }
+
+    /* Panel toggle móvil */
+    #panel-toggle {
+      display:none; position:fixed; bottom:24px; right:16px; z-index:1000;
+      width:52px; height:52px; border-radius:50%; background:var(--accent);
+      border:none; color:white; font-size:22px; cursor:pointer;
+      box-shadow:0 4px 20px rgba(59,130,246,0.5);
+      align-items:center; justify-content:center;
+    }
+
+    /* Botón ubicación */
+    #btn-location {
+      position:fixed; bottom:88px; right:16px; z-index:999;
+      width:44px; height:44px; border-radius:50%;
+      background:var(--surface); border:1px solid var(--border);
+      color:var(--text); font-size:20px; cursor:pointer;
+      box-shadow:0 2px 10px rgba(0,0,0,0.4);
+      display:flex; align-items:center; justify-content:center;
+    }
+    #btn-location:hover { border-color:var(--accent); color:var(--accent); }
+
+    /* Modal */
+    #modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:2000; align-items:center; justify-content:center; padding:16px; }
+    #modal-overlay.open { display:flex; }
+    #modal { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:20px; width:100%; max-width:380px; box-shadow:0 20px 60px rgba(0,0,0,0.5); }
+    #modal h2 { font-size:15px; margin-bottom:3px; }
+    #modal .modal-sub { font-size:12px; color:var(--text-dim); margin-bottom:12px; }
+    #modal textarea { width:100%; background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:10px; color:var(--text); font-size:13px; resize:vertical; min-height:80px; outline:none; margin-bottom:12px; font-family:inherit; }
+    #modal textarea:focus { border-color:var(--accent); }
+    #modal .modal-btns { display:flex; gap:8px; }
+    #modal .modal-btns button { flex:1; padding:10px; border-radius:8px; border:1px solid var(--border); font-size:13px; cursor:pointer; font-weight:600; }
+    #modal-cancel { background:var(--surface2); color:var(--text-dim); }
+    #modal-save   { background:var(--accent); color:white; border-color:var(--accent); }
+
+    /* Popup Leaflet */
+    .leaflet-popup-content-wrapper { background:var(--surface)!important; border:1px solid var(--border)!important; border-radius:12px!important; box-shadow:0 8px 32px rgba(0,0,0,0.5)!important; padding:0!important; }
+    .leaflet-popup-tip { background:var(--surface)!important; }
+    .leaflet-popup-close-button { color:var(--text-dim)!important; font-size:18px!important; right:8px!important; top:8px!important; }
+    .popup-inner { padding:14px 16px; min-width:220px; max-width:280px; }
+    .popup-num { font-size:10px; color:var(--text-dim); font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:3px; }
+    .popup-name { font-size:14px; font-weight:700; color:var(--text); line-height:1.3; margin-bottom:5px; }
+    .popup-barrio { display:inline-block; background:rgba(59,130,246,0.15); border:1px solid rgba(59,130,246,0.3); color:var(--accent); font-size:10px; font-weight:600; padding:2px 8px; border-radius:99px; margin-bottom:9px; text-transform:uppercase; }
+    .popup-row { display:flex; gap:6px; align-items:flex-start; margin-bottom:4px; font-size:11px; }
+    .popup-row .lbl { color:var(--text-dim); flex-shrink:0; width:56px; }
+    .popup-row .val { color:var(--text); word-break:break-word; }
+    .popup-status { display:flex; align-items:center; gap:6px; margin:9px 0 10px; padding:5px 10px; border-radius:8px; background:var(--surface2); border:1px solid var(--border); }
+    .popup-status-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+    .popup-status-text { font-size:12px; font-weight:600; }
+    .popup-note-box { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:7px 10px; font-size:11px; color:var(--text-dim); margin-bottom:9px; min-height:32px; font-style:italic; }
+    .popup-btns { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+    .popup-btns button { padding:7px 4px; border-radius:8px; border:1px solid var(--border); background:var(--surface2); color:var(--text); font-size:11px; cursor:pointer; font-weight:600; transition:all 0.2s; }
+    .popup-btns button:hover { border-color:var(--text-dim); }
+    .popup-btns .btn-estado { grid-column:1/-1; padding:9px; font-size:12px; }
+
+    /* Etiquetas de barrio */
+    .barrio-label { background:transparent!important; border:none!important; box-shadow:none!important; }
+    .barrio-label-inner { color:#fff; font-size:10px; font-weight:800; text-align:center; text-transform:uppercase; letter-spacing:0.8px; text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,0 2px 4px rgba(0,0,0,0.8); white-space:nowrap; pointer-events:none; }
+
+    /* Toast */
+    #toast { position:fixed; bottom:90px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:9px 18px; border-radius:99px; font-size:13px; font-weight:500; z-index:3000; opacity:0; transition:all 0.3s; pointer-events:none; white-space:nowrap; }
+    #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+    /* Responsive móvil */
+    @media (max-width:640px) {
+      #panel { position:fixed; right:0; top:0; height:100%; width:min(var(--panel-w),90vw); transform:translateX(100%); z-index:500; }
+      #panel.open { transform:translateX(0); box-shadow:-8px 0 40px rgba(0,0,0,0.6); }
+      #panel-toggle { display:flex; }
+      #btn-location { bottom:24px; right:80px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- PANTALLA DE CARGA -->
+<div id="splash">
+  <div class="spinner"></div>
+  <h2>📋 Encuestas Florencia</h2>
+  <p id="splash-msg">Conectando con la base de datos...</p>
+</div>
+
+<!-- INDICADOR DE CONEXIÓN -->
+<div id="conn-badge" class="syncing">
+  <div class="dot"></div>
+  <span id="conn-text">Conectando...</span>
+</div>
+
+<div id="app">
+  <div id="map"></div>
+
+  <div id="panel">
+    <div id="panel-header">
+      <h1>📋 Encuestas Florencia</h1>
+      <p>Caquetá · Sincronizado en tiempo real 🔄</p>
+    </div>
+
+    <div id="stats">
+      <div class="stat-box total"><div class="num" id="stat-total">0</div><div class="lbl">Total</div></div>
+      <div class="stat-box visit"><div class="num" id="stat-visit">0</div><div class="lbl">Visitados</div></div>
+      <div class="stat-box pend"><div class="num" id="stat-pend">0</div><div class="lbl">Pendientes</div></div>
+    </div>
+
+    <div id="progress-bar-wrap">
+      <div id="progress-label"><span>Progreso de visitas</span><span id="progress-pct">0%</span></div>
+      <div id="progress-bar"><div id="progress-fill" style="width:0%"></div></div>
+    </div>
+
+    <div id="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:var(--gray)"></div><span>Sin marcar</span></div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div><span>Pendiente</span></div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div><span>Visitado</span></div>
+    </div>
+
+    <div id="search-wrap">
+      <input type="text" id="search" placeholder="🔍 Buscar nombre o barrio..." />
+    </div>
+
+    <div id="filters">
+      <div class="filter-btn active" data-f="all">Todos</div>
+      <div class="filter-btn" data-f="sin">Sin marcar</div>
+      <div class="filter-btn" data-f="pendiente">Pendientes</div>
+      <div class="filter-btn" data-f="visitado">Visitados</div>
+    </div>
+
+    <div id="list-wrap"></div>
+
+    <div id="actions">
+      <div class="action-row">
+        <button class="btn btn-success" onclick="markAllPending()">✅ Todos pendientes</button>
+        <button class="btn btn-danger"  onclick="resetAll()">🔄 Reiniciar</button>
+      </div>
+      <div class="action-row">
+        <button class="btn btn-blue" onclick="exportData('csv')">📥 CSV</button>
+        <button class="btn btn-blue" onclick="exportData('json')">📥 JSON</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<button id="panel-toggle" onclick="togglePanel()">☰</button>
+<button id="btn-location" onclick="goToMyLocation()" title="Mi ubicación">📍</button>
+
+<div id="modal-overlay">
+  <div id="modal">
+    <h2 id="modal-title">Nota</h2>
+    <p class="modal-sub" id="modal-sub"></p>
+    <textarea id="modal-textarea" placeholder="Observación, resultado de la visita, teléfono adicional..."></textarea>
+    <div class="modal-btns">
+      <button id="modal-cancel" onclick="closeModal()">Cancelar</button>
+      <button id="modal-save"   onclick="saveNote()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- Leaflet -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- ============================================================
+     FIREBASE SDK  (versión modular compat — no requiere bundler)
+============================================================ -->
+<script type="module">
+import { initializeApp }                        from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, doc, setDoc, onSnapshot,
+         collection, writeBatch, getDocs }      from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+/* ============================================================
+   🔧 CONFIGURACIÓN FIREBASE
+   Reemplaza los valores entre comillas con los de tu proyecto.
+   Guía paso a paso al final de este archivo.
+============================================================ */
+const firebaseConfig = {
+  apiKey:            "AIzaSyAKCBRaK_oXyNhXiMTVzCOqx6e29BD508w",
+  authDomain:        "encuestas-florencia.firebaseapp.com",
+  projectId:         "encuestas-florencia",
+  storageBucket:     "encuestas-florencia.firebasestorage.app",
+  messagingSenderId: "1030169850500",
+  appId:             "1:1030169850500:web:4169c7ef6b48471ccb88d1"
+};
+/* ============================================================
+   DATOS DE ENCUESTAS
+   Fuente: CORDENADAS_ENCUESTAS2.csv + LISTADO_ENCUESTAS_NOTAS_txt.xlsx
+============================================================ */
+const ENCUESTAS = [
+  {id:1,  lat:1.6205, lng:-75.5948, nombre:"FLOR BRIGIDA REINA MARIN",             barrio:"CHAPINERO",              cedula:"40622023",    telefono:"3213590930"},
+  {id:2,  lat:1.6268, lng:-75.6035, nombre:"OSCAR MONCALEANO MOSQUERA",             barrio:"CUNDUY",                 cedula:"76299240",    telefono:"3212212094 | 987788"},
+  {id:3,  lat:1.6265, lng:-75.6042, nombre:"CARLOS AUGUSTO RAMIREZ LUGO",           barrio:"CUNDUY",                 cedula:"17649486",    telefono:"3183639453"},
+  {id:4,  lat:1.6345, lng:-75.5995, nombre:"ANGELA MARIA RINCON CASANOVA",          barrio:"SINAI",                  cedula:"1117525203",  telefono:"3228122963"},
+  {id:5,  lat:1.6112, lng:-75.6085, nombre:"LUZ DARY PENA PRIETO",                  barrio:"IDEMA",                  cedula:"40622218",    telefono:"3102596562"},
+  {id:6,  lat:1.6415, lng:-75.6120, nombre:"SEBASTIAN ZUÑIGA FIERRO",               barrio:"CARAÑO",                 cedula:"1006538478",  telefono:"3133480061 | 4373829"},
+  {id:7,  lat:1.6285, lng:-75.6080, nombre:"YURI MARCELA GONZALEZ GUILLEN",         barrio:"CARAÑO",                 cedula:"1117516766",  telefono:"3234864080 | 7288395"},
+  {id:8,  lat:1.6140, lng:-75.5890, nombre:"OBER GABRIEL OVIEDO DEJESUS",           barrio:"PALMERAS",               cedula:"17676435",    telefono:"3144811757"},
+  {id:9,  lat:1.6185, lng:-75.5915, nombre:"ISRAEL GIRON",                          barrio:"BERLIN",                 cedula:"17698620",    telefono:"3102641543"},
+  {id:10, lat:1.6192, lng:-75.5922, nombre:"NORMA ANGÉLICA MUÑOZ",                  barrio:"BERLIN",                 cedula:"1GE117807361",telefono:"3107970533 | 3223268908"},
+  {id:11, lat:1.6215, lng:-75.5865, nombre:"JASBLEIDY ESCOBAR COLLAZOS",            barrio:"EL TRIUNFO",             cedula:"1117516323",  telefono:"3228849040"},
+  {id:12, lat:1.6158, lng:-75.5955, nombre:"BEATRIZ ACOSTA LOPEZ",                  barrio:"EL MIRADOR - VENTILADOR",cedula:"40776588",    telefono:"3156681349"},
+  {id:13, lat:1.6162, lng:-75.5960, nombre:"ARNENCI PRIETO BASTO",                  barrio:"EL MIRADOR - VENTILADOR",cedula:"40601816",    telefono:"3144804861"},
+  {id:14, lat:1.6165, lng:-75.5965, nombre:"YULITZA MARIN GUILLEN",                 barrio:"EL MIRADOR - VENTILADOR",cedula:"1006501417",  telefono:"3154034252"},
+  {id:15, lat:1.6180, lng:-75.6215, nombre:"LUIS HERNANDO CASTILLO",                barrio:"TRONCAL DEL HACHA",      cedula:"10549985",    telefono:"3106763904"},
+  {id:16, lat:1.6185, lng:-75.6220, nombre:"MERCY MARTINEZ ALDANA",                 barrio:"TRONCAL DEL HACHA",      cedula:"30519560",    telefono:"3115054702"},
+  {id:17, lat:1.6165, lng:-75.6230, nombre:"NILBIA MURCIA CUELLAR",                 barrio:"TRONCAL DEL HACHA",      cedula:"40622829",    telefono:"3118957961"},
+  {id:18, lat:1.6190, lng:-75.6235, nombre:"ISABEL ARCINIEGAS",                     barrio:"TRONCAL DEL HACHA",      cedula:"26640888",    telefono:"3212051487 | 3228452467"},
+  {id:19, lat:1.6135, lng:-75.5875, nombre:"DIANA MILENA ARAQUE CABRERA",           barrio:"BELLO HORIZONTE",        cedula:"1117496596",  telefono:"3138863885"},
+  {id:20, lat:1.6142, lng:-75.5880, nombre:"SUSANA BUITRÓN ESCARPETA",              barrio:"BELLO HORIZONTE",        cedula:"1117493567",  telefono:"3237992103 | 3115270190"},
+  {id:21, lat:1.6110, lng:-75.6130, nombre:"JOSE POLANIA RUIZ",                     barrio:"SAN JUDAS",              cedula:"17639619",    telefono:"3134390556"},
+  {id:22, lat:1.6250, lng:-75.5850, nombre:"GLADIS TIQUE TRUJILLO",                 barrio:"SAN JUDAS",              cedula:"40767496",    telefono:"3237214899 | 3115327197"},
+  {id:23, lat:1.6380, lng:-75.6050, nombre:"LUIS ALBERTO ÑAÑEZ GRANDE",             barrio:"MINUTO DE DIOS",         cedula:"17624379",    telefono:"3206860072"},
+  {id:24, lat:1.6125, lng:-75.6045, nombre:"VICTOR BARRERA CUELLAR",                barrio:"TIRSO QUINTERO",         cedula:"17652081",    telefono:"3132295250"},
+  {id:25, lat:1.6105, lng:-75.6010, nombre:"MARYURI VELASQUEZ CASTRO",              barrio:"NISOLA",                 cedula:"1117539626",  telefono:"3223185608"},
+  {id:26, lat:1.6225, lng:-75.6180, nombre:"YESENIA DEL PILAR SANABRIA GUTIERREZ",  barrio:"7 DE OCTUBRE",           cedula:"40611567",    telefono:"3112905968"},
+  {id:27, lat:1.6195, lng:-75.6115, nombre:"VERONICA ALEJANDRA GASCA RENGIFO",      barrio:"CIUDADELA",              cedula:"1117531190",  telefono:"3105769018"},
+  {id:28, lat:1.6200, lng:-75.6120, nombre:"EUNICE GAVIRIA PADILLA",                barrio:"CIUDADELA",              cedula:"40730752",    telefono:"3212616217 | 3176504627"},
+  {id:29, lat:1.6205, lng:-75.6125, nombre:"AMPARO CORTES HINCAPIE",                barrio:"CIUDADELA",              cedula:"30506199",    telefono:"3158413168 | 3219572319"},
+  {id:30, lat:1.6150, lng:-75.6075, nombre:"DIANA MILENA HOYOS VALENCIA",           barrio:"EL OBRERO",              cedula:"1115943330",  telefono:"3219814859"},
+  {id:31, lat:1.6250, lng:-75.5850, nombre:"ELIZABETH MURCIA TIQUE",                barrio:"NUEVA COLOMBIA",         cedula:"40079943",    telefono:"3144236025 | 2656523"},
+  {id:32, lat:1.6255, lng:-75.5845, nombre:"YILIAM PAOLA MOSQUERA ARGUELLO",        barrio:"NUEVA COLOMBIA",         cedula:"1117501814",  telefono:"3175422493 | 3178549854"},
+  {id:33, lat:1.6160, lng:-75.6245, nombre:"JUDITH RAMIREZ DE FIERRO",              barrio:"EL TIMY",                cedula:"40758112",    telefono:"3125395312"},
+  {id:34, lat:1.6168, lng:-75.6250, nombre:"CONSUELO LOZADA MUÑOZ",                 barrio:"EL TIMY",                cedula:"1119582940",  telefono:"3206107936"},
+  {id:35, lat:1.6162, lng:-75.6255, nombre:"CARLA MARIA HERRERA CASTRO",            barrio:"EL TIMY",                cedula:"1117267846",  telefono:"3177964142"},
+  {id:36, lat:1.6090, lng:-75.5985, nombre:"MARIA GABRIELA CAMPIÑO ROJAS",          barrio:"LOS CORAZONES",          cedula:"24620022",    telefono:"3223441238"},
+  {id:37, lat:1.6198, lng:-75.6265, nombre:"DORA NEY MUÑETON LOSADA",               barrio:"FLORESTA",               cedula:"40733499",    telefono:"3115685553"},
+  {id:38, lat:1.6310, lng:-75.6015, nombre:"MYRIAM CHAVARRO GALVIS",                barrio:"ATALAYA",                cedula:"1117497063",  telefono:"3134300881"},
+  {id:39, lat:1.6315, lng:-75.6020, nombre:"LEONEL CASTRO MONTAÑO",                 barrio:"ATALAYA",                cedula:"17627339",    telefono:"3138571763"},
+  {id:40, lat:1.6325, lng:-75.6030, nombre:"ELSA VALDERRAMA RAMIREZ",               barrio:"LOS PINOS",              cedula:"26574209",    telefono:"3102084884"},
+  {id:41, lat:1.6340, lng:-75.6070, nombre:"AUDY ROMERO TOLEDO",                    barrio:"VILLA DEL PRADO",        cedula:"36066019",    telefono:"3112345670"},
+  {id:42, lat:1.6235, lng:-75.6090, nombre:"BELSY LORENA LOZADA SIERRA",            barrio:"LOS ANGELES",            cedula:"1118469704",  telefono:"3134671510"},
+  {id:43, lat:1.6055, lng:-75.6110, nombre:"LADIZ OSORIO COMETA",                   barrio:"LA ESMERALDA",           cedula:"40692589",    telefono:"3125263531"},
+  {id:44, lat:1.6260, lng:-75.5905, nombre:"LUZ MILA SANCHEZ VEGA",                 barrio:"ALTOS DE CAPRI",         cedula:"40088610",    telefono:"3114813321"},
+  {id:45, lat:1.6280, lng:-75.5915, nombre:"AMELIA VARGAS ROJAS",                   barrio:"ANDES ALTOS",            cedula:"40772177",    telefono:"3224217634 | 3127916623"},
+  {id:46, lat:1.6285, lng:-75.5920, nombre:"ESNEYDER ANTURY ZUÑIGA",                barrio:"ANDES ALTOS",            cedula:"1117485048",  telefono:"3112521905"},
+  {id:47, lat:1.6290, lng:-75.5925, nombre:"LEIDY JOHANNA SERRANO ROJAS",           barrio:"ANDES ALTOS",            cedula:"1083868242",  telefono:"3202017934"},
+  {id:48, lat:1.6100, lng:-75.5820, nombre:"MARIA ALEXANDRA MARINES BRAND",         barrio:"LA BOCANA",              cedula:"1115790583",  telefono:"3204668312"},
+  {id:49, lat:1.6152, lng:-75.5945, nombre:"MONICA PATRICIA LINAREZ VASQUEZ",       barrio:"KENNEDY",                cedula:"30508326",    telefono:"3118760289"},
+  {id:50, lat:1.6240, lng:-75.5895, nombre:"MERY FIERRO VALDERRAMA",                barrio:"NUEVA ESPERANZA",        cedula:"1117805279",  telefono:"3107211159 | 3102711159"},
+  {id:51, lat:1.6120, lng:-75.5930, nombre:"NYDIA ROJAS COLLAZOS",                  barrio:"LA PRADERA",             cedula:"40770083",    telefono:"3123532118"},
+  {id:52, lat:1.6125, lng:-75.5935, nombre:"MILENA CABRERA CUERVO",                 barrio:"LA PRADERA",             cedula:"30509230",    telefono:"3232073159"},
+  {id:53, lat:1.6158, lng:-75.5955, nombre:"GUILLERMO ANTONIO SALAZAR CUELLAR",     barrio:"BUENOS AIRES",           cedula:"17623401",    telefono:"3143124449 | 3212933962"},
+  {id:54, lat:1.6045, lng:-75.6095, nombre:"SANDRA PATRICIA PEREZ PABON",           barrio:"FLORENCIA LA NUEVA",     cedula:"1117492613",  telefono:"3105306339"},
+  {id:55, lat:1.6210, lng:-75.6145, nombre:"MILLER ROA LÓPEZ",                      barrio:"EL CASTILLO",            cedula:"97600930",    telefono:"3132469037 | 3112402003"},
+];
+
+/* Etiquetas de barrio en el mapa */
+const BARRIO_LABELS = [
+  {nombre:"CHAPINERO",         lat:1.6207, lng:-75.5935},
+  {nombre:"CUNDUY",            lat:1.6270, lng:-75.6038},
+  {nombre:"SINAI",             lat:1.6348, lng:-75.5990},
+  {nombre:"IDEMA",             lat:1.6112, lng:-75.6078},
+  {nombre:"CARAÑO",            lat:1.6402, lng:-75.6098},
+  {nombre:"PALMERAS",          lat:1.6143, lng:-75.5883},
+  {nombre:"BERLIN",            lat:1.6188, lng:-75.5912},
+  {nombre:"EL TRIUNFO",        lat:1.6217, lng:-75.5858},
+  {nombre:"EL MIRADOR",        lat:1.6163, lng:-75.5958},
+  {nombre:"TRONCAL DEL HACHA", lat:1.6183, lng:-75.6228},
+  {nombre:"BELLO HORIZONTE",   lat:1.6138, lng:-75.5872},
+  {nombre:"SAN JUDAS",         lat:1.6178, lng:-75.5848},
+  {nombre:"MINUTO DE DIOS",    lat:1.6382, lng:-75.6048},
+  {nombre:"TIRSO QUINTERO",    lat:1.6127, lng:-75.6048},
+  {nombre:"NISOLA",            lat:1.6107, lng:-75.6005},
+  {nombre:"7 DE OCTUBRE",      lat:1.6228, lng:-75.6178},
+  {nombre:"CIUDADELA",         lat:1.6202, lng:-75.6120},
+  {nombre:"EL OBRERO",         lat:1.6152, lng:-75.6072},
+  {nombre:"NUEVA COLOMBIA",    lat:1.6253, lng:-75.5845},
+  {nombre:"EL TIMY",           lat:1.6163, lng:-75.6252},
+  {nombre:"LOS CORAZONES",     lat:1.6092, lng:-75.5982},
+  {nombre:"FLORESTA",          lat:1.6200, lng:-75.6262},
+  {nombre:"ATALAYA",           lat:1.6313, lng:-75.6018},
+  {nombre:"LOS PINOS",         lat:1.6327, lng:-75.6028},
+  {nombre:"VILLA DEL PRADO",   lat:1.6342, lng:-75.6068},
+  {nombre:"LOS ANGELES",       lat:1.6237, lng:-75.6088},
+  {nombre:"LA ESMERALDA",      lat:1.6057, lng:-75.6108},
+  {nombre:"ALTOS DE CAPRI",    lat:1.6262, lng:-75.5900},
+  {nombre:"ANDES ALTOS",       lat:1.6285, lng:-75.5918},
+  {nombre:"LA BOCANA",         lat:1.6102, lng:-75.5818},
+  {nombre:"KENNEDY",           lat:1.6154, lng:-75.5942},
+  {nombre:"NUEVA ESPERANZA",   lat:1.6242, lng:-75.5892},
+  {nombre:"LA PRADERA",        lat:1.6122, lng:-75.5932},
+  {nombre:"BUENOS AIRES",      lat:1.6160, lng:-75.5950},
+  {nombre:"FLORENCIA LA NUEVA",lat:1.6047, lng:-75.6092},
+  {nombre:"EL CASTILLO",       lat:1.6212, lng:-75.6142},
+];
+
+/* ============================================================
+   CONSTANTES DE ESTADO
+============================================================ */
+const STATUS_COLOR = { sin:'#6b7280', pendiente:'#22c55e', visitado:'#ef4444' };
+const STATUS_LABEL = { sin:'Sin marcar', pendiente:'Pendiente', visitado:'Visitado' };
+const STATUS_NEXT  = { sin:'pendiente', pendiente:'visitado', visitado:'pendiente' };
+const LS_KEY       = 'encuestas_florencia_offline';   // fallback offline
+
+/* ============================================================
+   ESTADO LOCAL + FIREBASE
+============================================================ */
+let db;
+let estado = {};    // { id: { status, nota } }
+let markers = {};
+let activeFilter = 'all';
+let activeItem   = null;
+let modalCurrentId = null;
+let isOnline = false;
+
+function setConnBadge(mode, text) {
+  const b = document.getElementById('conn-badge');
+  b.className = '';
+  b.classList.add(mode);
+  document.getElementById('conn-text').textContent = text;
+}
+
+/* ---------- Inicializar estado local con defaults ---------- */
+function initEstado() {
+  ENCUESTAS.forEach(e => {
+    if (!estado[e.id]) estado[e.id] = { status:'sin', nota:'' };
+  });
+}
+
+/* ---------- Leer fallback offline ---------- */
+function loadOffline() {
+  try {
+    const s = localStorage.getItem(LS_KEY);
+    if (s) estado = JSON.parse(s);
+  } catch(e) {}
+  initEstado();
+}
+
+/* ---------- Guardar fallback offline ---------- */
+function saveOffline() {
+  localStorage.setItem(LS_KEY, JSON.stringify(estado));
+}
+
+/* ============================================================
+   FIREBASE — guardar un punto
+============================================================ */
+async function saveToFirebase(id) {
+  if (!db || !isOnline) { saveOffline(); return; }
+  try {
+    setConnBadge('syncing', 'Guardando...');
+    await setDoc(doc(db, 'encuestas', String(id)), estado[id]);
+    setConnBadge('online', 'Sincronizado ✓');
+    saveOffline();
+  } catch(err) {
+    console.error(err);
+    setConnBadge('offline', 'Sin conexión');
+    saveOffline();
+  }
+}
+
+/* ============================================================
+   FIREBASE — escuchar cambios en tiempo real (TODA la colección)
+============================================================ */
+function subscribeFirebase() {
+  onSnapshot(collection(db, 'encuestas'), snap => {
+    snap.docChanges().forEach(change => {
+      const id   = parseInt(change.doc.id);
+      const data = change.doc.data();
+      if (change.type === 'removed') return;
+      estado[id] = { status: data.status || 'sin', nota: data.nota || '' };
+      refreshMarker(id);
+    });
+    updateStats();
+    renderList();
+    saveOffline();
+  }, err => {
+    console.error('Firestore listener error:', err);
+    setConnBadge('offline', 'Sin conexión');
+  });
+}
+
+/* ============================================================
+   INICIALIZACIÓN FIREBASE + MAPA
+============================================================ */
+async function main() {
+  /* 1. Cargar estado offline primero para que el mapa cargue rápido */
+  loadOffline();
+
+  /* 2. Iniciar Firebase */
+  let app, firestore;
+  try {
+    app       = initializeApp(firebaseConfig);
+    firestore = getFirestore(app);
+    db        = firestore;
+    isOnline  = true;
+    setConnBadge('syncing', 'Cargando datos...');
+
+    /* 3. Leer datos actuales de Firestore */
+    const snap = await getDocs(collection(db, 'encuestas'));
+    snap.forEach(d => {
+      const id   = parseInt(d.id);
+      const data = d.data();
+      estado[id] = { status: data.status || 'sin', nota: data.nota || '' };
+    });
+    initEstado();
+    setConnBadge('online', 'En línea ✓');
+
+    /* 4. Suscribir listener en tiempo real */
+    subscribeFirebase();
+
+  } catch(err) {
+    console.warn('Firebase no disponible, modo offline:', err);
+    isOnline = false;
+    setConnBadge('offline', 'Modo offline');
+    initEstado();
+  }
+
+  /* 5. Construir mapa */
+  buildMap();
+
+  /* 6. Ocultar splash */
+  document.getElementById('splash').style.display = 'none';
+}
+
+/* ============================================================
+   MAPA LEAFLET
+============================================================ */
+let map;
+
+function buildMap() {
+  map = L.map('map', { center:[1.6145,-75.6060], zoom:14, zoomControl:true });
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution:'© OpenStreetMap © CARTO', subdomains:'abcd', maxZoom:19
+  }).addTo(map);
+
+  /* Etiquetas de barrio */
+  BARRIO_LABELS.forEach(b => {
+    L.marker([b.lat, b.lng], {
+      icon: L.divIcon({ html:`<div class="barrio-label-inner">${b.nombre}</div>`, className:'barrio-label', iconAnchor:[0,0], iconSize:[130,16] }),
+      interactive:false, keyboard:false
+    }).addTo(map);
+  });
+
+  /* Marcadores de encuestas */
+  ENCUESTAS.forEach(enc => addMarker(enc));
+  updateStats();
+  renderList();
+
+  if (window.innerWidth <= 640) map.zoomControl.setPosition('topleft');
+}
+
+/* ============================================================
+   ICONOS Y MARCADORES
+============================================================ */
+function createIcon(id) {
+  const color  = STATUS_COLOR[estado[id]?.status || 'sin'];
+  const status = estado[id]?.status || 'sin';
+  const hasNote= !!(estado[id]?.nota);
+
+  const pulse = status === 'pendiente' ? `
+    <circle cx="12" cy="12" r="10" fill="${color}" opacity="0.3">
+      <animate attributeName="r" values="10;16;10" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.3;0;0.3" dur="2s" repeatCount="indefinite"/>
+    </circle>` : '';
+
+  const noteDot = hasNote ? `<circle cx="20" cy="4" r="4" fill="#f59e0b" stroke="#0f1117" stroke-width="1.5"/>` : '';
+
+  return L.divIcon({
+    html:`<svg xmlns="http://www.w3.org/2000/svg" width="26" height="34" viewBox="0 0 26 34">
+      <defs><filter id="sh${id}"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="rgba(0,0,0,0.5)"/></filter></defs>
+      ${pulse}
+      <path d="M13 2C7.48 2 3 6.48 3 12c0 7 10 20 10 20s10-13 10-20c0-5.52-4.48-10-10-10z"
+        fill="${color}" stroke="white" stroke-width="1.5" filter="url(#sh${id})"/>
+      <text x="13" y="15" text-anchor="middle" fill="white" font-size="8" font-weight="bold" font-family="system-ui">${id}</text>
+      ${noteDot}
+    </svg>`,
+    iconSize:[26,34], iconAnchor:[13,34], popupAnchor:[0,-34], className:''
+  });
+}
+
+function addMarker(enc) {
+  const m = L.marker([enc.lat, enc.lng], { icon:createIcon(enc.id), riseOnHover:true, title:`#${enc.id} ${enc.nombre}` });
+  m.on('click', () => {
+    m.bindPopup(buildPopupHTML(enc), { maxWidth:300, minWidth:240 }).openPopup();
+    highlightListItem(enc.id);
+  });
+  m.addTo(map);
+  markers[enc.id] = m;
+}
+
+function refreshMarker(id) {
+  const enc = ENCUESTAS.find(e => e.id === id);
+  if (!enc || !markers[id]) return;
+  markers[id].setIcon(createIcon(id));
+  if (markers[id].isPopupOpen()) markers[id].setPopupContent(buildPopupHTML(enc));
+}
+
+/* ============================================================
+   POPUP
+============================================================ */
+function buildPopupHTML(enc) {
+  const s      = estado[enc.id];
+  const color  = STATUS_COLOR[s.status];
+  const label  = STATUS_LABEL[s.status];
+  const nextLbl= s.status==='sin'       ? '✅ Marcar pendiente'
+               : s.status==='pendiente' ? '🔴 Marcar visitado'
+               : '🟢 Volver a pendiente';
+
+  return `<div class="popup-inner">
+    <div class="popup-num">PUNTO #${enc.id}</div>
+    <div class="popup-name">${enc.nombre}</div>
+    <div class="popup-barrio">${enc.barrio}</div>
+    <div class="popup-row"><span class="lbl">Cédula:</span><span class="val">${enc.cedula}</span></div>
+    <div class="popup-row"><span class="lbl">Teléfono:</span><span class="val">${enc.telefono}</span></div>
+    <div class="popup-status">
+      <div class="popup-status-dot" style="background:${color}"></div>
+      <span class="popup-status-text" style="color:${color}">${label}</span>
+    </div>
+    <div class="popup-note-box">${s.nota || '<i style="opacity:0.5">Sin nota</i>'}</div>
+    <div class="popup-btns">
+      <button class="btn-estado" onclick="cycleStatus(${enc.id})">${nextLbl}</button>
+      <button onclick="openModal(${enc.id})">📝 Nota</button>
+      <button onclick="map.closePopup()">✕ Cerrar</button>
+    </div>
+  </div>`;
+}
+
+/* ============================================================
+   CICLO DE ESTADO — guarda en Firebase + refresca todo
+============================================================ */
+window.cycleStatus = async function(id) {
+  estado[id].status = STATUS_NEXT[estado[id].status];
+  refreshMarker(id);
+  updateStats();
+  renderList();
+  showToast(`#${id} → ${STATUS_LABEL[estado[id].status]}`);
+  await saveToFirebase(id);
+  map.closePopup();
+  setTimeout(() => {
+    const enc = ENCUESTAS.find(e => e.id === id);
+    markers[id].bindPopup(buildPopupHTML(enc), { maxWidth:300, minWidth:240 }).openPopup();
+  }, 100);
+};
+
+/* ============================================================
+   ESTADÍSTICAS
+============================================================ */
+function updateStats() {
+  const total    = ENCUESTAS.length;
+  const visitado = ENCUESTAS.filter(e => estado[e.id]?.status==='visitado').length;
+  const pendiente= ENCUESTAS.filter(e => estado[e.id]?.status==='pendiente').length;
+  const pct = Math.round((visitado/total)*100);
+  document.getElementById('stat-total').textContent  = total;
+  document.getElementById('stat-visit').textContent  = visitado;
+  document.getElementById('stat-pend').textContent   = pendiente;
+  document.getElementById('progress-pct').textContent= pct+'%';
+  document.getElementById('progress-fill').style.width = pct+'%';
+}
+
+/* ============================================================
+   LISTA LATERAL
+============================================================ */
+function renderList() {
+  const q    = document.getElementById('search').value.toLowerCase();
+  const wrap = document.getElementById('list-wrap');
+  wrap.innerHTML = '';
+
+  const filtered = ENCUESTAS.filter(e => {
+    const s = estado[e.id]?.status || 'sin';
+    if (activeFilter!=='all' && s!==activeFilter) return false;
+    if (q && !e.nombre.toLowerCase().includes(q) && !e.barrio.toLowerCase().includes(q) && !String(e.id).includes(q)) return false;
+    return true;
+  });
+
+  if (!filtered.length) {
+    wrap.innerHTML='<p style="color:var(--text-dim);font-size:12px;padding:16px;text-align:center">Sin resultados</p>';
+    return;
+  }
+
+  filtered.forEach(enc => {
+    const s       = estado[enc.id];
+    const color   = STATUS_COLOR[s.status];
+    const hasNote = !!s.nota;
+    const item    = document.createElement('div');
+    item.className= 'item'+(activeItem===enc.id?' active-item':'');
+    item.id = `item-${enc.id}`;
+    item.innerHTML=`
+      <div class="item-dot" style="background:${color}"></div>
+      <div class="item-info">
+        <div class="item-num">PUNTO #${enc.id}</div>
+        <div class="item-name">${enc.nombre}</div>
+        <div class="item-barrio">${enc.barrio}</div>
+      </div>
+      ${hasNote?'<div class="item-note-icon">📝</div>':''}`;
+    item.addEventListener('click', () => {
+      map.setView([enc.lat, enc.lng], 16, { animate:true });
+      setTimeout(() => markers[enc.id].bindPopup(buildPopupHTML(enc),{maxWidth:300,minWidth:240}).openPopup(), 400);
+      highlightListItem(enc.id);
+      if (window.innerWidth<=640) document.getElementById('panel').classList.remove('open');
+    });
+    wrap.appendChild(item);
+  });
+}
+
+function highlightListItem(id) {
+  if (activeItem) { const p=document.getElementById(`item-${activeItem}`); if(p)p.classList.remove('active-item'); }
+  activeItem = id;
+  const el = document.getElementById(`item-${id}`);
+  if (el) { el.classList.add('active-item'); el.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+}
+
+/* ============================================================
+   FILTROS Y BÚSQUEDA
+============================================================ */
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    activeFilter = btn.dataset.f;
+    renderList();
+  });
+});
+document.getElementById('search').addEventListener('input', renderList);
+
+/* ============================================================
+   ACCIONES GLOBALES
+============================================================ */
+window.markAllPending = async function() {
+  if (!confirm('¿Marcar todos los puntos como PENDIENTES?')) return;
+  if (!db || !isOnline) { ENCUESTAS.forEach(e=>{ estado[e.id].status='pendiente'; }); saveOffline(); ENCUESTAS.forEach(e=>refreshMarker(e.id)); updateStats(); renderList(); showToast('Todos pendientes (offline)'); return; }
+  try {
+    setConnBadge('syncing','Guardando...');
+    const batch = writeBatch(db);
+    ENCUESTAS.forEach(e => {
+      estado[e.id].status = 'pendiente';
+      batch.set(doc(db,'encuestas',String(e.id)), estado[e.id]);
+    });
+    await batch.commit();
+    setConnBadge('online','Sincronizado ✓');
+    saveOffline();
+    ENCUESTAS.forEach(e=>refreshMarker(e.id));
+    updateStats(); renderList();
+    showToast('Todos marcados como pendientes');
+  } catch(err) { console.error(err); showToast('Error al guardar'); }
+};
+
+window.resetAll = async function() {
+  if (!confirm('¿Reiniciar todo el progreso? Se borran estados pero NO las notas.')) return;
+  if (!db || !isOnline) { ENCUESTAS.forEach(e=>{ estado[e.id].status='sin'; }); saveOffline(); ENCUESTAS.forEach(e=>refreshMarker(e.id)); updateStats(); renderList(); showToast('Reiniciado (offline)'); return; }
+  try {
+    setConnBadge('syncing','Guardando...');
+    const batch = writeBatch(db);
+    ENCUESTAS.forEach(e => {
+      estado[e.id].status = 'sin';
+      batch.set(doc(db,'encuestas',String(e.id)), estado[e.id]);
+    });
+    await batch.commit();
+    setConnBadge('online','Sincronizado ✓');
+    saveOffline();
+    ENCUESTAS.forEach(e=>refreshMarker(e.id));
+    updateStats(); renderList();
+    showToast('Progreso reiniciado');
+  } catch(err) { console.error(err); showToast('Error al guardar'); }
+};
+
+window.exportData = function(fmt) {
+  const rows = ENCUESTAS.map(e => ({
+    punto:e.id, nombre:e.nombre, barrio:e.barrio, cedula:e.cedula, telefono:e.telefono,
+    estado:STATUS_LABEL[estado[e.id]?.status||'sin'], lat:e.lat, lng:e.lng, nota:estado[e.id]?.nota||''
+  }));
+  if (fmt==='json') {
+    download('encuestas_florencia.json', JSON.stringify(rows,null,2), 'application/json');
+  } else {
+    const hdr='Punto;Nombre;Barrio;Cedula;Telefono;Estado;Latitud;Longitud;Nota';
+    const csv=[hdr,...rows.map(r=>`${r.punto};"${r.nombre}";"${r.barrio}";"${r.cedula}";"${r.telefono}";"${r.estado}";${r.lat};${r.lng};"${r.nota}"`)].join('\n');
+    download('encuestas_florencia.csv','\ufeff'+csv,'text/csv');
+  }
+  showToast('Archivo descargado');
+};
+
+function download(filename, content, type) {
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([content],{type}));
+  a.download=filename; a.click();
+}
+
+/* ============================================================
+   MODAL DE NOTAS
+============================================================ */
+window.openModal = function(id) {
+  const enc = ENCUESTAS.find(e=>e.id===id);
+  modalCurrentId = id;
+  document.getElementById('modal-title').textContent = `Nota — Punto #${id}`;
+  document.getElementById('modal-sub').textContent   = enc.nombre+' · '+enc.barrio;
+  document.getElementById('modal-textarea').value    = estado[id]?.nota||'';
+  document.getElementById('modal-overlay').classList.add('open');
+  setTimeout(()=>document.getElementById('modal-textarea').focus(),100);
+};
+
+window.closeModal = function() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  modalCurrentId=null;
+};
+
+window.saveNote = async function() {
+  if (modalCurrentId===null) return;
+  estado[modalCurrentId].nota = document.getElementById('modal-textarea').value.trim();
+  closeModal();
+  refreshMarker(modalCurrentId);
+  renderList();
+  await saveToFirebase(modalCurrentId);
+  showToast('Nota guardada');
+};
+
+document.getElementById('modal-overlay').addEventListener('click', e=>{
+  if (e.target===document.getElementById('modal-overlay')) closeModal();
+});
+
+/* ============================================================
+   MI UBICACIÓN
+============================================================ */
+let locationMarker=null;
+window.goToMyLocation = function() {
+  if (!navigator.geolocation) { showToast('Geolocalización no disponible'); return; }
+  showToast('Buscando ubicación...');
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const {latitude,longitude}=pos.coords;
+    map.setView([latitude,longitude],16,{animate:true});
+    if (locationMarker) map.removeLayer(locationMarker);
+    locationMarker=L.marker([latitude,longitude],{
+      icon:L.divIcon({html:`<div style="width:16px;height:16px;background:#3b82f6;border-radius:50%;border:3px solid white;box-shadow:0 0 0 4px rgba(59,130,246,0.3)"></div>`,className:'',iconSize:[16,16],iconAnchor:[8,8]})
+    }).bindPopup('<div style="color:#0f1117;font-size:12px;font-weight:700">📍 Mi ubicación</div>').addTo(map).openPopup();
+    showToast('Ubicación encontrada');
+  },()=>showToast('No se pudo obtener la ubicación'),{enableHighAccuracy:true,timeout:10000});
+};
+
+/* ============================================================
+   PANEL MÓVIL Y TOAST
+============================================================ */
+window.togglePanel = function() { document.getElementById('panel').classList.toggle('open'); };
+
+let toastTimeout;
+function showToast(msg) {
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimeout);
+  toastTimeout=setTimeout(()=>t.classList.remove('show'),2500);
+}
+
+/* ============================================================
+   ARRANQUE
+============================================================ */
+main();
+</script>
+</body>
+</html>
