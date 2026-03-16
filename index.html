@@ -309,13 +309,14 @@ import { getFirestore, doc, setDoc, onSnapshot,
    Guía paso a paso al final de este archivo.
 ============================================================ */
 const firebaseConfig = {
-  apiKey:            "AIzaSyAKCBRaK_oXyNhXiMTVzCOqx6e29BD508w",
-  authDomain:        "encuestas-florencia.firebaseapp.com",
-  projectId:         "encuestas-florencia",
-  storageBucket:     "encuestas-florencia.firebasestorage.app",
-  messagingSenderId: "1030169850500",
-  appId:             "1:1030169850500:web:4169c7ef6b48471ccb88d1"
+  apiKey:            "PEGA_TU_apiKey_AQUI",
+  authDomain:        "PEGA_TU_authDomain_AQUI",
+  projectId:         "PEGA_TU_projectId_AQUI",
+  storageBucket:     "PEGA_TU_storageBucket_AQUI",
+  messagingSenderId: "PEGA_TU_messagingSenderId_AQUI",
+  appId:             "PEGA_TU_appId_AQUI"
 };
+
 /* ============================================================
    DATOS DE ENCUESTAS
    Fuente: CORDENADAS_ENCUESTAS2.csv + LISTADO_ENCUESTAS_NOTAS_txt.xlsx
@@ -378,45 +379,93 @@ const ENCUESTAS = [
   {id:55, lat:1.6210, lng:-75.6145, nombre:"MILLER ROA LÓPEZ",                      barrio:"EL CASTILLO",            cedula:"97600930",    telefono:"3132469037 | 3112402003"},
 ];
 
-/* Etiquetas de barrio en el mapa */
+/* ============================================================
+   ETIQUETAS DE BARRIO — coordenadas del mapa oficial PGIRS 2023
+   Aparecen solo cuando el zoom >= 15 para no sobrecargar el mapa
+   Nombres exactos según el documento oficial de Florencia, Caquetá
+============================================================ */
 const BARRIO_LABELS = [
-  {nombre:"CHAPINERO",         lat:1.6207, lng:-75.5935},
-  {nombre:"CUNDUY",            lat:1.6270, lng:-75.6038},
-  {nombre:"SINAI",             lat:1.6348, lng:-75.5990},
-  {nombre:"IDEMA",             lat:1.6112, lng:-75.6078},
-  {nombre:"CARAÑO",            lat:1.6402, lng:-75.6098},
-  {nombre:"PALMERAS",          lat:1.6143, lng:-75.5883},
-  {nombre:"BERLIN",            lat:1.6188, lng:-75.5912},
-  {nombre:"EL TRIUNFO",        lat:1.6217, lng:-75.5858},
-  {nombre:"EL MIRADOR",        lat:1.6163, lng:-75.5958},
-  {nombre:"TRONCAL DEL HACHA", lat:1.6183, lng:-75.6228},
-  {nombre:"BELLO HORIZONTE",   lat:1.6138, lng:-75.5872},
-  {nombre:"SAN JUDAS",         lat:1.6178, lng:-75.5848},
-  {nombre:"MINUTO DE DIOS",    lat:1.6382, lng:-75.6048},
-  {nombre:"TIRSO QUINTERO",    lat:1.6127, lng:-75.6048},
-  {nombre:"NISOLA",            lat:1.6107, lng:-75.6005},
-  {nombre:"7 DE OCTUBRE",      lat:1.6228, lng:-75.6178},
-  {nombre:"CIUDADELA",         lat:1.6202, lng:-75.6120},
-  {nombre:"EL OBRERO",         lat:1.6152, lng:-75.6072},
-  {nombre:"NUEVA COLOMBIA",    lat:1.6253, lng:-75.5845},
-  {nombre:"EL TIMY",           lat:1.6163, lng:-75.6252},
-  {nombre:"LOS CORAZONES",     lat:1.6092, lng:-75.5982},
-  {nombre:"FLORESTA",          lat:1.6200, lng:-75.6262},
-  {nombre:"ATALAYA",           lat:1.6313, lng:-75.6018},
-  {nombre:"LOS PINOS",         lat:1.6327, lng:-75.6028},
-  {nombre:"VILLA DEL PRADO",   lat:1.6342, lng:-75.6068},
-  {nombre:"LOS ANGELES",       lat:1.6237, lng:-75.6088},
-  {nombre:"LA ESMERALDA",      lat:1.6057, lng:-75.6108},
-  {nombre:"ALTOS DE CAPRI",    lat:1.6262, lng:-75.5900},
-  {nombre:"ANDES ALTOS",       lat:1.6285, lng:-75.5918},
-  {nombre:"LA BOCANA",         lat:1.6102, lng:-75.5818},
-  {nombre:"KENNEDY",           lat:1.6154, lng:-75.5942},
-  {nombre:"NUEVA ESPERANZA",   lat:1.6242, lng:-75.5892},
-  {nombre:"LA PRADERA",        lat:1.6122, lng:-75.5932},
-  {nombre:"BUENOS AIRES",      lat:1.6160, lng:-75.5950},
-  {nombre:"FLORENCIA LA NUEVA",lat:1.6047, lng:-75.6092},
-  {nombre:"EL CASTILLO",       lat:1.6212, lng:-75.6142},
+  /* ── CENTRO / NORTE ── */
+  {nombre:"CENTRO",              lat:1.6143, lng:-75.6068},
+  {nombre:"BERLIN",              lat:1.6170, lng:-75.6008},
+  {nombre:"LA GLORIA",           lat:1.6320, lng:-75.6075},
+  {nombre:"CIUDAD VERDE",        lat:1.6295, lng:-75.6045},
+  {nombre:"VIVIENDA MILITAR",    lat:1.6250, lng:-75.6058},
+  {nombre:"IDEMA",               lat:1.6210, lng:-75.6120},
+  {nombre:"BRUSELAS",            lat:1.6188, lng:-75.6050},
+  {nombre:"EL TIMMY",            lat:1.6175, lng:-75.6245},
+  {nombre:"PARQUE TURBAY",       lat:1.6155, lng:-75.6080},
+  {nombre:"LA LIBERTAD",         lat:1.6130, lng:-75.6055},
+  {nombre:"EL BOSQUE",           lat:1.6270, lng:-75.6090},
+  {nombre:"JUAN XXIII",          lat:1.6240, lng:-75.6078},
+  {nombre:"LA VEGA",             lat:1.6200, lng:-75.6065},
+  {nombre:"LA FLORESTA",         lat:1.6185, lng:-75.6275},
+  {nombre:"LA ATALAYA",          lat:1.6310, lng:-75.6010},
+  {nombre:"LA PAZ",              lat:1.6220, lng:-75.6030},
+  {nombre:"CIUDADELA SIGLO XXI", lat:1.6255, lng:-75.6130},
+  {nombre:"LA NORMAL",           lat:1.6165, lng:-75.6035},
+  {nombre:"BELLO HORIZONTE",     lat:1.6135, lng:-75.5870},
+  {nombre:"VERSALLES",           lat:1.6290, lng:-75.6030},
+  {nombre:"TORASSO ALTO",        lat:1.6350, lng:-75.5970},
+  {nombre:"PIEDRAHITA",          lat:1.6305, lng:-75.5960},
+  {nombre:"LAS AVENIDAS",        lat:1.6325, lng:-75.5990},
+  {nombre:"EL TRIUNFO",          lat:1.6220, lng:-75.5865},
+  {nombre:"EL CUNDUY",           lat:1.6275, lng:-75.6055},
+  {nombre:"LA PRIMAVERA",        lat:1.6345, lng:-75.6030},
+  {nombre:"7 DE AGOSTO",         lat:1.6260, lng:-75.5980},
+  {nombre:"EL VENTILADOR",       lat:1.6160, lng:-75.5960},
+  {nombre:"ALAMOS",              lat:1.6340, lng:-75.6055},
+  {nombre:"TIRSO QUINTERO",      lat:1.6125, lng:-75.6040},
+  {nombre:"EL OBRERO",           lat:1.6150, lng:-75.6078},
+  {nombre:"EL PORVENIR",         lat:1.6108, lng:-75.6050},
+  {nombre:"LOS ALPES",           lat:1.6095, lng:-75.6030},
+  {nombre:"BUENOS AIRES",        lat:1.6160, lng:-75.5950},
+  {nombre:"LOS ANGELES",         lat:1.6230, lng:-75.6095},
+  {nombre:"LAS TORRES",          lat:1.6175, lng:-75.5835},
+  {nombre:"LA VICTORIA",         lat:1.6140, lng:-75.5820},
+  {nombre:"PALMERAS",            lat:1.6140, lng:-75.5880},
+  {nombre:"TORASSO BAJO",        lat:1.6305, lng:-75.5945},
+  {nombre:"LAS AMERICAS",        lat:1.6085, lng:-75.6000},
+  {nombre:"PINOS ALTOS",         lat:1.6360, lng:-75.5935},
+  {nombre:"PABLO VI",            lat:1.6118, lng:-75.5960},
+  {nombre:"EL SINAI",            lat:1.6355, lng:-75.5990},
+  {nombre:"PRADOS DEL NORTE",    lat:1.6380, lng:-75.6010},
+  {nombre:"PALMERAS BAJAS",      lat:1.6120, lng:-75.5858},
+  {nombre:"SAN JUDAS",           lat:1.6105, lng:-75.6108},
+  {nombre:"ABBAS TURBAY",        lat:1.6235, lng:-75.5870},
+  {nombre:"ANDES BAJO",          lat:1.6265, lng:-75.5898},
+  /* ── ZONA ORIENTAL / SURORIENTAL ── */
+  {nombre:"CHAPINERO",           lat:1.6200, lng:-75.5935},
+  {nombre:"KENNEDY",             lat:1.6150, lng:-75.5945},
+  {nombre:"LA BOCANA",           lat:1.6098, lng:-75.5815},
+  {nombre:"NUEVA COLOMBIA",      lat:1.6252, lng:-75.5840},
+  {nombre:"ANDES ALTO",          lat:1.6282, lng:-75.5912},
+  {nombre:"ALTOS DE CAPRI",      lat:1.6260, lng:-75.5900},
+  {nombre:"LA PRADERA",          lat:1.6118, lng:-75.5928},
+  {nombre:"NUEVA ESPERANZA",     lat:1.6238, lng:-75.5888},
+  {nombre:"MINUTO DE DIOS",      lat:1.6378, lng:-75.6045},
+  {nombre:"LA ESMERALDA",        lat:1.6052, lng:-75.6105},
+  {nombre:"LOS CORAZONES",       lat:1.6088, lng:-75.5980},
+  /* ── ZONA OCCIDENTAL ── */
+  {nombre:"EL TIMY",             lat:1.6162, lng:-75.6248},
+  {nombre:"TRONCAL DEL HACHA",   lat:1.6180, lng:-75.6225},
+  {nombre:"7 DE OCTUBRE",        lat:1.6225, lng:-75.6182},
+  {nombre:"FLORESTA",            lat:1.6195, lng:-75.6268},
+  {nombre:"CARAÑO",              lat:1.6415, lng:-75.6118},
+  {nombre:"VILLA DEL PRADO",     lat:1.6338, lng:-75.6068},
+  {nombre:"EL CASTILLO",         lat:1.6208, lng:-75.6148},
+  {nombre:"FLORENCIA LA NUEVA",  lat:1.6042, lng:-75.6090},
+  /* ── ZONA SUR ── */
+  {nombre:"LA AMAZONIA",         lat:1.5980, lng:-75.6120},
+  {nombre:"VILLA AMAZONICA",     lat:1.5965, lng:-75.6095},
+  {nombre:"JESUS A. GONZALEZ",   lat:1.5995, lng:-75.6060},
+  {nombre:"PUENTE LOPEZ",        lat:1.6010, lng:-75.6042},
+  {nombre:"LA COOPERATIVA",      lat:1.6035, lng:-75.6068},
+  {nombre:"SIMON BOLIVAR",       lat:1.6022, lng:-75.6100},
 ];
+
+/* Zoom mínimo para mostrar etiquetas de barrio */
+const BARRIO_MIN_ZOOM = 14;
 
 /* ============================================================
    CONSTANTES DE ESTADO
@@ -558,13 +607,23 @@ function buildMap() {
     attribution:'© OpenStreetMap © CARTO', subdomains:'abcd', maxZoom:19
   }).addTo(map);
 
-  /* Etiquetas de barrio */
-  BARRIO_LABELS.forEach(b => {
+  /* Etiquetas de barrio — aparecen solo al acercarse (zoom >= BARRIO_MIN_ZOOM) */
+  const barrioMarkers = BARRIO_LABELS.map(b =>
     L.marker([b.lat, b.lng], {
-      icon: L.divIcon({ html:`<div class="barrio-label-inner">${b.nombre}</div>`, className:'barrio-label', iconAnchor:[0,0], iconSize:[130,16] }),
+      icon: L.divIcon({ html:`<div class="barrio-label-inner">${b.nombre}</div>`, className:'barrio-label', iconAnchor:[60,8], iconSize:[120,16] }),
       interactive:false, keyboard:false
-    }).addTo(map);
-  });
+    })
+  );
+
+  function updateBarrioLabels() {
+    const zoom = map.getZoom();
+    barrioMarkers.forEach(m => {
+      if (zoom >= BARRIO_MIN_ZOOM) { if (!map.hasLayer(m)) m.addTo(map); }
+      else { if (map.hasLayer(m)) map.removeLayer(m); }
+    });
+  }
+  map.on('zoomend', updateBarrioLabels);
+  updateBarrioLabels();
 
   /* Marcadores de encuestas */
   ENCUESTAS.forEach(enc => addMarker(enc));
